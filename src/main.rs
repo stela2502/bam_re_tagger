@@ -14,13 +14,13 @@ fn process_bam(bam_file: &str, output_file: &str, from_tag: &str, to_tag: &str) 
     // Create output BAM file
     let mut bam_writer = bam::Writer::from_path(output_file, &header, bam::Format::Bam)?;
 
+    let mut buffer = Vec::new();  // Buffer for batching writes
+
+
     for result in bam_reader.records() {
         // Unwrap the result; handle errors if they occur
         let checks = result?;
         let mut record = checks.clone(); // Make a mutable copy of the record
-
-        // Initialize a flag to indicate whether to write the record
-        let mut write = false;
 
         // Check if the record has the 'from_tag' and get its value
         if let Ok(value) = checks.aux(from_tag.as_bytes()) {
@@ -30,20 +30,21 @@ fn process_bam(bam_file: &str, output_file: &str, from_tag: &str, to_tag: &str) 
             // Add the new tag with the same value
             let _ = record.push_aux(to_tag.as_bytes(), value); // This method sets the new tag
 
-            write = true; // Mark that we need to write the modified record
-        }
+            buffer.push( record );
 
+            // Once we have enough records in the buffer, write them out
+            if buffer.len() >= 1000 {
+                for record in buffer.drain(..) {
+                    bam_writer.write(&record)?;  // Write the batch
+                }
+            }
+        }  
 
-        // Write the modified record to the output BAM file if necessary
-        if write {
-            bam_writer.write(&record)?; // Write the modified record
-        }
-        else {
-            // Optionally, write the original (unmodified) record
-            bam_writer.write(&record)?; // Write the original record unchanged
-        }
     }
-
+    // Write any remaining records in the buffer
+    for record in buffer {
+        bam_writer.write(&record)?;
+    }
     // // Collect records from the BAM file
     // let records: Result<Vec<Record>, _> = bam_reader.records().collect();
     // // Process each record sequentially
