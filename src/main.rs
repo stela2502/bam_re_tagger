@@ -2,6 +2,7 @@ use rust_htslib::bam::{self, Read};
 use std::path::Path;
 use clap::Parser;
 use std::fs;
+use rayon::prelude::*;
 
 fn process_bam(bam_file: &str, output_file: &str, from_tag: &str, to_tag: &str) -> Result<(), Box<dyn std::error::Error>> {
     // Open the input BAM file
@@ -14,70 +15,65 @@ fn process_bam(bam_file: &str, output_file: &str, from_tag: &str, to_tag: &str) 
     // Create output BAM file
     let mut bam_writer = bam::Writer::from_path(output_file, &header, bam::Format::Bam)?;
 
-    let mut buffer = Vec::new();  // Buffer for batching writes
+    const BUFFER_SIZE: usize = 1_000_000; // Define the buffer size (1 million reads)
+    let mut buffer = Vec::with_capacity(BUFFER_SIZE);
 
-
+    // Read BAM records into the buffer
     for result in bam_reader.records() {
-        // Unwrap the result; handle errors if they occur
-        let checks = result?;
-        let mut record = checks.clone(); // Make a mutable copy of the record
+        let record = result?;
+        buffer.push(record);
 
-        // Check if the record has the 'from_tag' and get its value
-        if let Ok(value) = checks.aux(from_tag.as_bytes()) {
-            // Remove the old tag
-            let _ = record.remove_aux(from_tag.as_bytes());
+        // If we reach the buffer size, process the records
+        if buffer.len() >= BUFFER_SIZE {
+            // Process the buffer in parallel
+            let processed_records: Vec<_> = buffer
+                .par_iter() // Use par_iter to allow parallel processing
+                .filter_map(|rec| {
+                    let mut record = rec.clone(); // Clone to modify
+                    if let Ok(value) = rec.aux(from_tag.as_bytes()) {
+                        let _ = record.remove_aux(from_tag.as_bytes());
+                        let _ = record.push_aux(to_tag.as_bytes(), value);
+                        Some(record) // Return the modified record
+                    } else {
+                        None // Skip records without the tag
+                    }
+                })
+                .collect();
 
-            // Add the new tag with the same value
-            let _ = record.push_aux(to_tag.as_bytes(), value); // This method sets the new tag
-
-            buffer.push( record );
-
-            // Once we have enough records in the buffer, write them out
-            if buffer.len() >= 1000 {
-                for record in buffer.drain(..) {
-                    bam_writer.write(&record)?;  // Write the batch
-                }
+            // Write the processed records in batches
+            for record in processed_records {
+                bam_writer.write(&record)?; // Write each modified record
             }
-        }  
 
+            // Clear the buffer for the next batch
+            buffer.clear();
+        }
     }
-    // Write any remaining records in the buffer
-    for record in buffer {
-        bam_writer.write(&record)?;
+
+    // Process any remaining records in the buffer
+    if !buffer.is_empty() {
+        let processed_records: Vec<_> = buffer
+            .par_iter() // Process the remaining records in parallel
+            .filter_map(|rec| {
+                let mut record = rec.clone(); // Clone to modify
+                if let Ok(value) = rec.aux(from_tag.as_bytes()) {
+                    let _ = record.remove_aux(from_tag.as_bytes());
+                    let _ = record.push_aux(to_tag.as_bytes(), value);
+                    Some(record)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Write the processed records in batches
+        for record in processed_records {
+            bam_writer.write(&record)?; // Write each modified record
+        }
     }
-    // // Collect records from the BAM file
-    // let records: Result<Vec<Record>, _> = bam_reader.records().collect();
-    // // Process each record sequentially
-
-    // match records {
-    //     Ok(records) => {
-    //         for result in records {
-    //             // Here, result is of type Record, so we can clone it directly
-    //             let mut record: Record = result.clone(); 
-    //             let mut write = false;
-
-    //             // Check if the record has the 'from_tag' and get its value
-    //             if let Ok(value) = result.aux(from_tag.as_bytes()) {
-    //                 // Remove the old tag
-    //                 let _ =record.remove_aux(from_tag.as_bytes());
-
-    //                 // Add the new tag with the same value
-    //                 let _ =record.push_aux(to_tag.as_bytes(), value); // This method sets the new tag
-
-    //                 write = true;
-    //             }
-    //             if write {
-    //                 // Write the modified (or unmodified) record to the output BAM file
-    //                 bam_writer.write(&record)?;
-    //             }
-    //         }
-    //     },
-    //     Err(_) => {},
-    // }
 
     Ok(())
 }
-
 
 #[derive(Parser)]
 struct Cli {
@@ -99,19 +95,19 @@ struct Cli {
 }
 
 fn main() {
-    
     let cli = Cli::parse();
 
     let path = Path::new(&cli.output);
     if let Some(parent_dir) = path.parent() {
-        match fs::create_dir_all(&parent_dir){
+        match fs::create_dir_all(&parent_dir) {
             Ok(_) => (),
-            Err(e) => panic!("I could not create the outpath: {e}")
-        };
+            Err(e) => panic!("I could not create the output path: {e}"),
+        }
     }
 
-    let _ = process_bam(&cli.input, &cli.output, &cli.from_tag, &cli.to_tag);
+    if let Err(err) = process_bam(&cli.input, &cli.output, &cli.from_tag, &cli.to_tag) {
+        eprintln!("Error processing BAM file: {}", err);
+    }
 
     println!("Finished");
 }
-
