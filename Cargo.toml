@@ -1,0 +1,9 @@
+[package]
+name = "bam_re_tagger"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rust-htslib = "0.41.0"
+clap = { version = "3", features = ["derive"] }
+
