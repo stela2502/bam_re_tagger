@@ -7,3 +7,5 @@ edition = "2021"
 rust-htslib = "0.41.0"
 clap = { version = "3", features = ["derive"] }
 rayon = "1.7"
+indicatif = "0.17"
+num_cpus = "1.13" 
