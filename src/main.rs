@@ -118,6 +118,7 @@ fn process_bam(bam_file: &str, output_file: &str, from_tag: &str, to_tag: &str) 
 /// This tool renames a BAM tag. A task that should normally not be necessary and is likely not
 /// recommended at all. I expect you to know what you are doing here!
 #[derive(Parser)]
+#[clap(version = "0.0.3", author = "Stefan L. <stefan.lang@med.lu.se>")]
 struct Cli {
     /// Path to the input BAM file
     #[clap(short, long)]
