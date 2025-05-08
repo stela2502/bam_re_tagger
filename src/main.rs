@@ -115,6 +115,8 @@ fn process_bam(bam_file: &str, output_file: &str, from_tag: &str, to_tag: &str) 
 
 }
 
+/// This tool renames a BAM tag. A task that should normally not be necessary and is likely not
+/// recommended at all. I expect you to know what you are doing here!
 #[derive(Parser)]
 struct Cli {
     /// Path to the input BAM file
