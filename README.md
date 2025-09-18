@@ -1,3 +1,4 @@
+[![Rust](https://github.com/stela2502/bam_re_tagger/actions/workflows/rust.yml/badge.svg)](https://github.com/stela2502/bam_re_tagger/actions/workflows/rust.yml)
 
 # bam_re_tagger - a simple Rust program to change tag names in a bam file
 
